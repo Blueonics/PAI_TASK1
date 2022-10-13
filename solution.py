@@ -10,10 +10,11 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 from sklearn.model_selection import train_test_split
+from sklearn import preprocessing
 
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
 EXTENDED_EVALUATION = False
-EVALUATION_GRID_POINTS = 300  # Number of grid points used in extended evaluation
+EVALUATION_GRID_POINTS = 200  # Number of grid points used in extended evaluation
 EVALUATION_GRID_POINTS_3D = 50  # Number of points displayed in 3D during evaluation
 
 # Cost function constants
@@ -36,7 +37,7 @@ class Model(object):
         """
         self.rng = np.random.default_rng(seed=0)
         # TODO: Add custom initialization for your model here if necessary
-        self.gpr = GaussianProcessRegressor(kernel=Matern(length_scale=1.0, nu=2.0), random_state=0)
+        self.gpr = GaussianProcessRegressor(Matern(nu=1.4, length_scale=0.12, length_scale_bounds=(1e-1, 10.0)), random_state=0)
 
     def estimate_marginal_likelihood(self):
         log_likelihood = self.gpr.log_marginal_likelihood()
@@ -52,8 +53,8 @@ class Model(object):
         """
 
         # TODO: Use your GP to estimate the posterior mean and stddev for each location here
-        gp_mean = np.zeros(test_features.shape[0], dtype=float)
-        gp_std = np.zeros(test_features.shape[0], dtype=float)
+        # gp_mean = np.zeros(test_features.shape[0], dtype=float)
+        # gp_std = np.zeros(test_features.shape[0], dtype=float)
 
         # TODO: Use the GP posterior to form your predictions here
         predictions, gp_std = self.gpr.predict(test_features, return_std=True)
@@ -67,10 +68,26 @@ class Model(object):
         param train_features: Training features as a 2d NumPy float array of shape (NUM_SAMPLES, 2)
         :param train_GT: Training pollution concentrations as a 1d NumPy float array of shape (NUM_SAMPLES,)
         """
-
         # TODO: Fit your model here
+        # Downsampling
+        train_features, train_GT = downSampling(train_features, train_GT, num=8000)
+        # Scaler
+        train_features = meanScaler(train_features)
+        # print("input", train_features)
         self.gpr.fit(train_features, train_GT)
         pass
+
+
+def meanScaler(train_features):
+    preprocessing.StandardScaler().fit_transform(X=train_features)
+    return train_features
+
+
+def downSampling(train_features, train_GT, num):  # input dim: 15189x2
+    rand_indices = random.sample(range(0, train_features.shape[0] - 1), num)  # 1000 samples for testing
+    train_features = np.array(train_features)[rand_indices]
+    train_GT = np.array(train_GT)[rand_indices]
+    return train_features, train_GT
 
 
 def cost_function(ground_truth: np.ndarray, predictions: np.ndarray) -> float:
@@ -160,13 +177,6 @@ def perform_extended_evaluation(model: Model, output_dir: str = '/results'):
     plt.show()
 
 
-def downSampling(train_features, train_GT):  # input dim: 15189x2
-    rand_indices = random.sample(range(0, train_features.shape[0] - 1), 1000) # 1000 samples for testing
-    train_features = np.array(train_features)[rand_indices]
-    train_GT = np.array(train_GT)[rand_indices]
-    return train_features, train_GT
-
-
 def main():
     # Load the training dateset and test features
     train_features = np.loadtxt('train_x.csv', delimiter=',', skiprows=1)
@@ -174,10 +184,7 @@ def main():
     test_features = np.loadtxt('test_x.csv', delimiter=',', skiprows=1)
 
     # code for testing
-    train_features, X_val, train_GT, y_val = train_test_split(train_features, train_GT, test_size=0.2, random_state=42)
-
-    # downsampled training features
-    train_features, train_GT = downSampling(train_features, train_GT)
+    train_features, X_val, train_GT, y_val = train_test_split(train_features, train_GT, test_size=0.25, random_state=42)
 
     # Fit the model
     print('Fitting model')
@@ -191,9 +198,9 @@ def main():
     print("Cost:", cost_function(y_val, pred_val))
 
     # Predict on the test features
-    # print('Predicting on test features')
-    # predictions, mean, std = model.make_predictions(test_features)
-    # print(predictions)
+    print('Predicting on test features')
+    predictions, mean,  std = model.make_predictions(test_features)
+    print(predictions)
 
     if EXTENDED_EVALUATION:
         perform_extended_evaluation(model, output_dir='.')
